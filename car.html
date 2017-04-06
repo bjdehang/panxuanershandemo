@@ -1,0 +1,531 @@
+<html>
+	<head>
+		<meta http-equiv="X-UA-Compatible" content="IE=edge" />
+		<meta http-equiv="Content-Type" content="text/html; charset=utf-8" />
+		<meta name="viewport" content="width=640, target-densityDpi=device-dpi, user-scalable=no">
+		<script type="text/javascript" src="jquery-1.10.2.min.js"></script>
+		
+		<style>
+			html, body{
+				margin:0px;
+				padding:0px;
+				position:absolute;
+				top:0px;
+				left:0px;
+				width:640px;
+				height:100%;
+				min-height:640px;
+				//border:1px solid red;
+			}
+			
+			#director{
+				position:absolute;
+				top:0px;
+				left:0px;
+				//background:url(img/main_bg.png);
+				//background-size:100% 100%;
+			}
+		</style>
+	</head>
+	
+	<body>
+		<canvas id="director" ></canvas>
+	</body>
+</html>
+
+<script>
+	var IH, IW;
+	var ctx;
+	
+	var Actor = function(){
+		//资源
+		var resource;
+	    //x轴位置
+		var x;
+		//y轴位置
+		var y;
+		//层数
+		var layer;
+		//运动状态
+		var status;
+		//当前帧数
+		var curFrame;
+		//自运动顺序
+		var selfPlay;
+		//自身频率
+		var freshTime;
+		//自身ID
+		var onlyID;
+		//自身时间轴
+		var selfClock;
+		//资源高度
+		var rHeight;
+		//资源宽度
+		var rWidth;
+		//资源帧数
+		var rn;
+		//输出大小比例
+		var oRate;
+		//速度
+		var v;
+		//加速度
+		var a;
+		//方向
+		var Dv;
+		//加速度方向
+		var Da;
+		//是否静态
+		var isStatic;
+		//从第几帧开始不变化形态
+		var staticFromFrame;
+		//可以活动的范围
+		var exitArea;
+		//canvas类型
+		var type;
+		//canvas内容
+		var content;
+		//允许旋转
+		var allowRotate;
+	}
+	
+	Actor.prototype = {
+		loadResource : function(src){
+			var that = this;
+			var img = new Image();
+			img.src = src;
+			that.status = "load";
+			$(img).load(function(){
+				that.rHeight = this.height;
+				that.rWidth = this.width;
+				that.resource = this;
+				if(that.status == "wait" || that.status == "stop"){
+					//that.status = "play";
+					//that.selfClock = Date.now();
+					//that.resource = this;
+					that.play();
+					that.getDS();
+				}else{
+					that.status = "done";
+				}
+			});
+		},
+		//resource, x, y, layer, status, curFrame, selfPlay, freshTime, h
+		init : function(arg){
+			this.resource = arg.resource;
+			this.x = arg.x?arg.x:0;
+			this.y = arg.y?arg.y:0;
+			this.layer = arg.layer?arg.layer:1;
+			this.status = arg.status?arg.status:"stop";
+			this.curFrame = arg.curFrame?arg.curFrame:0;
+			this.selfPlay = arg.selfPlay?arg.selfPlay:new Array();
+			this.rn = arg.rn?arg.rn:arg.selfPlay.length;
+			this.freshTime = arg.freshTime?arg.freshTime:200;
+			this.oRate = arg.rate?arg.rate:1;
+			this.isStatic = arg.isStatic!==undefined?arg.isStatic:true;
+			this.staticFromFrame = arg.staticFromFrame?arg.staticFromFrame:0;
+			this.exitArea = arg.exitArea?arg.exitArea:{a:0, b:0, c:$(document.body).width(), d:$(document.body).height()};
+			this.resource?this.loadResource(this.resource):"";
+			this.type = arg.type?arg.type:"";
+			this.content = arg.content?arg.content:"";
+			this.fillStyle = arg.fillStyle?arg.fillStyle:"";
+			this.font = arg.font?arg.font:"";
+			this.v = arg.v?arg.v:0;
+			this.Dv = arg.Dv?arg.Dv:0;
+			this.a = arg.a?arg.a:0;
+			this.Da = arg.Da?arg.Da:0;
+			this.allowRotate = arg.allowRotate?arg.allowRotate:false;
+			//this.selfClock = Date.now();
+			this.onlyID = getUuid();
+			return this.onlyID;
+		}, 
+		getDS: function(){
+			var that = this;
+			//静态物体跳过该方法;
+			if(that.isStatic){
+				return;
+			}
+			//if(that.status == "play" && !that.timer){
+			var dt = that.vClock?(Date.now()-that.vClock):0;
+			var vx = that.v*Math.cos(that.Dv/180*Math.PI);
+			var vy = that.v*Math.sin(that.Dv/180*Math.PI);
+			var ax = that.a*Math.cos(that.Da/180*Math.PI);
+			var ay = that.a*Math.sin(that.Da/180*Math.PI);
+			
+			var dsx = vx*dt+1/2*Math.pow(dt,2)*ax;
+			that.x = that.x + dsx;
+			var dsy = vy*dt+1/2*Math.pow(dt,2)*ay;
+			that.y = that.y + dsy;
+			
+			//console.log(vx+"|"+vy+"|"+that.Dv);
+			
+			vx += ax*dt;
+			vy += ay*dt;
+			that.v = Math.sqrt(Math.pow(vx,2) + Math.pow(vy,2));
+			if(vx==0 && vy ==0){
+				that.Dv = 0;
+			}else if(vx>0){
+				that.Dv = Math.atan(vy/vx)/Math.PI*180;
+			}else{
+				that.Dv = 180+Math.atan(vy/vx)/Math.PI*180;
+			}
+			
+			//console.log(that.v+"|"+that.Dv);
+			
+			//if(that.exitArea && (that.x > that.exitArea.c || that.x < that.exitArea.a || that.y < that.exitArea.b || that.y > that.exitArea.d)){
+			//	that.deleteSelf();
+			//	return;
+			//}
+			if(!that.onlyID){
+				return;
+			}
+				
+			that.vClock = Date.now();
+			that.timer = setTimeout(function(){
+				that.getDS();
+			}, 50);
+		},
+		play : function(){
+			if(this.resource && this.status == "load"){
+				this.status = "wait";
+			}else{
+				this.status = "play";
+				this.selfClock = Date.now();
+			}
+		},
+		stop : function(){
+			this.status = "stop";
+		},
+		getCurFrame : function(){
+			if(this.status == "play"){
+				this.curFrame = (Date.now()-this.selfClock)/this.freshTime+this.curFrame;
+				this.selfClock = Date.now();
+			}
+			return Math.round(this.curFrame);
+		},
+		drawActor : function(ctx){
+			if(this.status != "load" && this.status != "wait" && this.status != "stop"){
+				//console.log(this.status);
+				if(this.clockRefresh){
+					this.clockRefresh();
+				}
+				if(this.exitArea && (this.x > this.exitArea.c || this.x < this.exitArea.a || this.y < this.exitArea.b || this.y > this.exitArea.d)){
+					if(this.overArea){
+						this.overArea();
+					}
+				}
+				if(this.onlyID){
+					ctx.save();
+					var cutLeft = this.getCurFrame()%this.selfPlay.length;//this.selfPlay[this.getCurFrame()%this.selfPlay.length]*(this.rWidth/this.rn);
+					var staticCutLeft = this.selfPlay[this.staticFromFrame]*(this.rWidth/this.rn);
+					if(this.staticFromFrame && this.getCurFrame() >= this.staticFromFrame){
+						cutLeft = this.staticFromFrame;
+					}
+					if(this.type == "FONT"){
+						ctx.font = this.font?this.font:'bold 24px arial';
+						ctx.fillStyle = this.fillStyle?this.fillStyle:'#000';
+						ctx.fillText(this.content, this.x, this.y);
+					}else if(this.resource && typeof(this.resource)=="object"){
+						if(this.allowRotate){
+							ctx.save();
+							ctx.translate(this.x+(this.rWidth/this.rn)*this.oRate/2, this.y+this.rHeight*this.oRate/2);
+							ctx.rotate(this.Dv/180*Math.PI);
+							ctx.translate(-this.x-(this.rWidth/this.rn)*this.oRate/2, -this.y-this.rHeight*this.oRate/2);
+							ctx.drawImage(this.resource, this.selfPlay[cutLeft]*(this.rWidth/this.rn), 0, (this.rWidth/this.rn), this.rHeight,
+								this.x, this.y, (this.rWidth/this.rn)*this.oRate, this.rHeight*this.oRate);
+							ctx.restore();
+						}else{
+							ctx.drawImage(this.resource, this.selfPlay[cutLeft]*(this.rWidth/this.rn), 0, (this.rWidth/this.rn), this.rHeight,
+								this.x, this.y, (this.rWidth/this.rn)*this.oRate, this.rHeight*this.oRate);
+						}
+					}
+					if(this.clickEvent){
+						ctx.beginPath();
+						ctx.rect(this.x, this.y, (this.rWidth/this.rn)*this.oRate, this.rHeight*this.oRate);
+						if($.pointerX && $.pointerY && ctx.isPointInPath($.pointerX, $.pointerY)){
+							$.pointerX = "", $.pointerY = "";
+							//点击后事件
+							this.clickEvent();
+						}
+					}
+				}
+			}
+		},
+		setX : function(x){
+			this.x = x;
+		},
+		setY : function(y){
+			this.y = y;
+		},
+		addAction : function(name, fn){
+			this[name] = fn;
+			return this;
+		},
+		deleteSelf : function(){
+			for(var i in this){
+				delete(this[i]);
+			}
+		}
+	}
+	
+	
+	
+	var drawBoard = function(id){
+		this.jNode = $("#"+id);
+		this.ctx = this.jNode.get(0).getContext('2d');
+		this.drawStack = new Array();
+	}
+	
+	drawBoard.prototype = {
+		adaptScreen : function(){
+			IH = $(document.body).height();
+			IW = $(document.body).width();
+			
+			this.jNode.css({width: IW+"px", height: IH+"px"});
+			this.jNode.attr("width",  IW);
+			this.jNode.attr("height", IH);
+			
+			this.ctx = this.jNode.get(0).getContext("2d");
+		},
+		clearBoard : function(){
+			this.ctx.clearRect(0, 0, IW, IH);
+		},
+		paintStack : function(){
+			for(var i=0; i<this.drawStack.length; i++){
+				var obj = this.drawStack[i];
+				if(!obj.drawActor || !obj.onlyID){
+					this.drawStack.splice(i,1);
+					i--;
+				}else{
+					obj.drawActor(this.ctx);
+				}
+			}
+		},
+		clearPaintStack : function(){
+			while(this.drawStack.length>0){
+				this.drawStack.pop();
+			}
+		},
+		pushStack : function(obj, n){
+			if(!n){
+				this.drawStack.push(obj);
+			}else{
+				if(this.drawStack.length-(n+1)>=0){
+					this.drawStack.splice(this.drawStack.length-(n+1), 0, obj);
+				}
+			}
+		},
+		deleteStackElement : function(arg){
+			if(typeof(arg) == "string"){
+				for(var i=0; i<this.drawStack.length; i++){
+					var tmp = this.drawStack[i];
+					if(tmp.onlyID == arg){
+						this.drawStack.splice(i,1);
+						break;
+					}
+				}
+			}else if(typeof(arg) == "object"){
+				for(var i=0; i<this.drawStack.length; i++){
+					var tmp = this.drawStack[i];
+					if(tmp.onlyID == arg.onlyID){
+						this.drawStack.splice(i,1);
+						break;
+					}
+				}
+			}
+		},
+		run : function(){
+			var that = this;
+			that.clearBoard();
+			that.paintStack();
+			setTimeout(function(){
+				that.run();
+			}, 50);
+		}
+	}
+	
+	
+	function getUuid(){
+	  var len=32;//32长度
+	  var radix=16;//16进制
+	  var chars='0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz'.split('');var uuid=[],i;radix=radix||chars.length;if(len){for(i=0;i<len;i++)uuid[i]=chars[0|Math.random()*radix];}else{var r;uuid[8]=uuid[13]=uuid[18]=uuid[23]='-';uuid[14]='4';for(i=0;i<36;i++){if(!uuid[i]){r=0|Math.random()*16;uuid[i]=chars[(i==19)?(r&0x3)|0x8:r];}}}
+	  return uuid.join('');
+	}  
+	
+	
+	$(function(){
+		db = new drawBoard("director");
+		db.adaptScreen();
+		db.run();
+	})
+	
+	
+	//自适应大小
+	$(
+		$.playGame = function(){
+		
+			$.beginTime = Date.now();
+		
+			$("#director").click(function(e){
+				$.pointerX = e.clientX;
+				$.pointerY = e.clientY;
+				$.clientX = e.clientX;
+				$.clientY = e.clientY;
+			});
+			
+			gameArea = new Actor();
+			var gameAreaY = 0;
+			gameArea.init({resource:"img/road/road.png", selfPlay:[0], rn:1, rate:1, isStatic:false});
+			gameArea.play();
+			db.pushStack(gameArea);
+			
+			line1 = new Actor();
+			var beeY = 0;
+			line1.init({resource:"img/road/line.png", selfPlay:[0,1,2,3,4], x:225, rn:5, rate:1});
+			line1.play();
+			db.pushStack(line1);
+			
+			line2 = new Actor();
+			var beeY = 0;
+			line2.init({resource:"img/road/line.png", selfPlay:[0,1,2,3,4], x:320, rn:5, rate:1});
+			line2.play();
+			db.pushStack(line2);
+			
+			line3 = new Actor();
+			var beeY = 0;
+			line3.init({resource:"img/road/line.png", selfPlay:[0,1,2,3,4], x:415, rn:5, rate:1});
+			line3.play();
+			db.pushStack(line3);
+			
+			
+			title = new Actor();
+			var beeY = 0;
+			title.init({resource:"img/road/title.png", selfPlay:[0], rn:1, rate:0.5});
+			title.play();
+			db.pushStack(title);
+			
+			timeTitle = new Actor();
+			timeTitle.init({type:"FONT", content:"游戏时间:", font:"28px arial", fillStyle:"#fff", selfPlay:[0], x:20, y:50, rn:1, rate:1});
+			timeTitle.play();
+			db.pushStack(timeTitle);
+			
+			
+			distanceTitle = new Actor();
+			distanceTitle.init({type:"FONT", content:"行驶距离:", font:"28px arial", fillStyle:"#fff", selfPlay:[0], x:400, y:50, rn:1, rate:1});
+			distanceTitle.play();
+			db.pushStack(distanceTitle);
+			
+			$.useTime = 0;
+			$.driveDistance = 0;
+			
+			timeVal = new Actor();
+			timeVal.init({type:"FONT", content:$.useTime+"秒", font:"28px arial", fillStyle:"#f00", selfPlay:[0], x:155, y:50, rn:1, rate:1});
+			timeVal.play();
+			db.pushStack(timeVal);
+			
+			distanceVal = new Actor();
+			distanceVal.init({type:"FONT", content:$.driveDistance+"km", font:"28px arial", fillStyle:"#f00", selfPlay:[0], x:535, y:50, rn:1, rate:1});
+			distanceVal.play();
+			db.pushStack(distanceVal);
+			
+			
+			$.posArr = [135, 230, 325, 420];
+			$.curPos = 1;
+			
+			$.roadStatus = [0, 0, 0, 0];
+			$.roadSpeed  = [0, 0, 0, 0];
+			
+			
+			car = new Actor();
+			var carY = IH/2;
+			car.init({resource:"img/road/car.png", selfPlay:[0], y:carY, x:$.posArr[$.curPos], rn:1, rate:0.5, isStatic:false});
+			car.play();
+			db.pushStack(car);
+			
+			
+			gameArea.addAction("clickEvent", function(){
+				if($.clientX<$.posArr[$.curPos] && $.curPos>0){
+					$.curPos--;
+				}else if($.clientX>($.posArr[$.curPos]+car.rWidth*car.oRate/car.rn) && $.curPos<3){
+					$.curPos++;
+				}
+				
+				car.x = $.posArr[$.curPos];
+			});
+			
+			addObstacle(Math.floor(Math.random()*4));
+			
+			calTime();
+		}
+	)
+	
+	
+	function calTime(){
+		var tmp = Math.round((Date.now() - $.beginTime)/1000);
+		timeVal.content = tmp+"秒";
+		
+		distanceVal.content = tmp/10+"km";
+		
+		setTimeout(function(){
+			calTime();
+		}, 1000);
+	}
+	
+	
+	function addObstacle(pos){
+	
+		setTimeout(function(){
+			addObstacle(Math.floor(Math.random()*4));
+		}, 1000+Math.floor(Math.random()*4)*1000);
+		
+		
+		var obstacleTypeIndex = Math.floor(Math.random()*10)+1;
+		var direction = Math.floor(Math.random()*5)==3?false:true;
+		
+		var curV = obstacleTypeIndex==4?0.35:(Math.random()*2+1)/10;
+		
+		if(direction === false && $.roadStatus[pos]!=1){
+			if($.roadStatus[pos]==2 && $.roadSpeed[pos]<curV){
+				return;
+			}
+			$.roadStatus[pos] = 2;
+		}else if(direction === true && $.roadStatus[pos]!=2){
+			if($.roadStatus[pos]==1 && $.roadSpeed[pos]<curV){
+				return;
+			}
+			$.roadStatus[pos] = 1;
+		}else{
+			return;
+		}
+		
+		if(obstacleTypeIndex==1 || obstacleTypeIndex==2 || obstacleTypeIndex==3 || obstacleTypeIndex==4){
+			direction = true;
+		}
+		var obstacle = new Actor();
+		if(obstacleTypeIndex==1 || obstacleTypeIndex==2 || obstacleTypeIndex==3){
+			obstacleX = $.posArr[pos]-15;
+		}else{
+			obstacleX = $.posArr[pos];
+		}
+		
+		obstacle.init({resource:"img/road/obstacle"+obstacleTypeIndex+".png", selfPlay:[0], rn:1, y:direction?50:IH, x:obstacleX, rate:0.5, isStatic:false});
+		obstacle.play();
+		db.pushStack(obstacle);
+		
+		obstacle.exitArea.d = IH;
+		obstacle.exitArea.b = 0;
+		
+		obstacle.v = curV;
+		obstacle.Dv = direction?90:-90;
+		
+		$.roadSpeed[pos] = curV;
+		
+		
+		obstacle.addAction("overArea", function(){
+			this.deleteSelf();
+			$.roadStatus[pos] = 0;
+			$.roadSpeed[pos] = 0;
+		});
+	}
+	
+	
+</script>
